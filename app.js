@@ -1,15 +1,16 @@
 // ============================================================================
 // RSRA Token — friendly front-end for rsra.roche.com/Token/Generate
 //
-// Flow (fully client-side, no backend):
+// Flow:
 //   1. GET  /Token/Create?UseCase=<x>   → scrape the live __RequestVerification-
 //                                          Token AND the form's default fields.
 //   2. POST /Token/Generate             → submit exactly what the real form would.
 //   3. Parse the token out of the response HTML and render it as a Code 128 barcode.
 //
-// This works only when the page is served from the same origin as RSRA (so the
-// browser attaches your Roche SSO session and the anti-forgery cookie). See
-// README.md for deployment + the `?debug` / demo escape hatches.
+// The /Token/* requests are same-origin. Run `python serve.py`: it serves this
+// app on localhost and reverse-proxies /Token/* to RSRA with your session
+// cookies, so there's no CORS/SameSite wall. (Deploying behind a roche.com
+// origin works too.) See README.md for setup + the `?debug` / demo escapes.
 // ============================================================================
 
 import { renderBarcode } from "./code128.js";

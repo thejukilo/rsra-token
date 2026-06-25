@@ -4,78 +4,73 @@ A small, friendly front-end for `rsra.roche.com/Token/Generate`. You pick **one
 thing** — the token type — and it renders the resulting token as a **Code 128
 barcode** you can scan straight off the screen (e.g. into an x800 system).
 
-It is a **completely self-contained static app**: plain HTML + JS, no build
-step, no framework, no backend. Three files:
+Run it locally with one command — no hosting, no build step.
 
 | File | What it is |
 | --- | --- |
-| `index.html` | The whole UI (one dropdown → barcode). |
-| `app.js` | Talks to RSRA and drives the UI. |
+| `serve.py` | Local host + reverse proxy (Python stdlib). **This is what you run.** |
+| `index.html` | The UI (one dropdown → barcode). |
+| `app.js` | Talks to RSRA (via the proxy) and drives the UI. |
 | `code128.js` | Zero-dependency Code 128 encoder → SVG. |
 
-## How it works
+## Run it
 
-Because RSRA is behind Roche SSO and protected by an anti-forgery token, the
-only way to generate a token automatically is to run **in an authenticated RSRA
-context**. So this app, served from the same origin, does exactly what the real
-form does:
-
-1. `GET /Token/Create?UseCase=<type>` — scrapes the live
-   `__RequestVerificationToken` **and** the form's default fields (UserId,
-   ExpirationDate, Systems, disclaimer flags).
-2. `POST /Token/Generate` — submits precisely what the browser would, with your
-   chosen `UseCase`.
-3. Parses the token out of the response HTML and renders the barcode.
-
-Your SSO session and the anti-forgery cookie are attached automatically by the
-browser (`credentials: include`) — **nothing sensitive is stored or sent
-anywhere except RSRA itself.**
-
-## Deployment
-
-This must be served **same-origin as RSRA** so the browser shares the session
-cookie. Options, cleanest first:
-
-- **Host it under a `roche.com` origin** (ideal) — e.g. RSRA serves
-  `/token-ui/` as static files. Then `CONFIG.base = ""` just works.
-- **A same-origin reverse proxy** that maps a path to `rsra.roche.com`.
-
-A standalone host on a *different* origin (Vercel, etc.) will be blocked by
-CORS + cookie scoping — that's a property of the auth model, not this app.
-
-## Try it now (no Roche needed)
-
-Open `index.html` with `?demo`:
-
-```
-index.html?demo
+```bash
+python serve.py
 ```
 
-Demo mode skips RSRA and shows a sample token + barcode, so you can sanity-check
-the UI and that the barcode scans.
+It serves the app at <http://localhost:8765>, opens your browser, and
+reverse-proxies `/Token/*` to RSRA. Pick a token type → barcode.
+
+### Why a proxy (and not just open the .html)?
+
+A page opened from disk can't read RSRA's responses (**CORS**) and can't send
+your session cookie (**SameSite**) — those are browser-only rules. `serve.py`
+sidesteps both: the browser only talks to `localhost`, and the script makes the
+real call to RSRA **server-side**, where neither rule applies.
+
+### Cookies (so the proxy is authenticated)
+
+`serve.py` needs your logged-in `rsra.roche.com` session. In order of preference:
+
+1. **Auto (recommended):** `pip install browser_cookie3`, make sure you're
+   logged in to RSRA in your browser, then run `serve.py`. It reads the
+   roche.com cookies for you. Pick the browser with
+   `RSRA_BROWSER=chrome|edge|firefox` if needed.
+   *(Note: latest Chrome on Windows encrypts its cookie store; if auto fails,
+   use Edge/Firefox or the paste method below.)*
+2. **Paste once:** copy the `cookie` header from DevTools → Network → any RSRA
+   request, then either
+   - `RSRA_COOKIE="PF=...; .AspNetCore.cookieC1=...; ..."`, or
+   - save it to `rsra_cookie.txt` next to `serve.py`.
+
+Env knobs: `RSRA_PORT` (default 8765), `RSRA_BASE` (default
+`https://rsra.roche.com`), `RSRA_INSECURE=1` (skip TLS verify — last resort).
+
+## Try it with no Roche at all
+
+Open <http://localhost:8765/?demo> (or `index.html?demo`). Demo mode shows a
+sample token + barcode so you can sanity-check the UI and that it scans.
 
 ## Finalizing token extraction
 
-`extractToken()` in `app.js` uses robust heuristics, but it hasn't yet been
-matched against a **real** `/Token/Generate` response (we don't have that HTML).
-To lock it in:
+`extractToken()` in `app.js` uses robust heuristics but hasn't been matched
+against a **real** `/Token/Generate` response yet. To lock it in:
 
 1. Open the app with `?debug`.
 2. Generate a token.
 3. Copy the `[rsra-token] /Token/Generate response:` HTML logged to the console
-   (redact the token value) and share it — the extractor becomes a one-line,
-   exact selector.
+   (redact the token value) and share it — extraction becomes a one-line selector.
 
 ## Configuration (`app.js`)
 
 - `CONFIG.useCases` — the dropdown options. Only `Authentication` is known so
   far; add the others once confirmed.
 - `CONFIG.defaultExpiryDays` — fallback validity if the form doesn't supply one.
-- `CONFIG.base` — RSRA origin; `""` (same-origin) is the intended setting.
+- `CONFIG.base` — leave `""` (same-origin); the proxy handles the rest.
 
-## Notes / open questions
+## Open questions
 
 - **Barcode symbology:** Code 128 (confirmed).
 - **Other token types:** only `Authentication` is wired up; send the full list.
-- **UserId:** taken from the Create form's default (the logged-in user). If RSRA
-  doesn't pre-fill it, we'll add a remembered field.
+- **`/Token/Generate` response shape** — needed to finalize extraction (see above).
